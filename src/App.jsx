@@ -103,18 +103,30 @@ export default function App() {
     return () => { cancelled = true }
   }, [analysisMode, apiKey, stats.comments])
 
+  // 选择当前使用的分析数据
+  const useAI = analysisMode === 'ai' && aiResult && !aiFailed
+
+  const analysis = useAI ? { rankedAnxieties: aiResult.rankedAnxieties, topAnxiety: aiResult.topAnxiety } : ruleAnalysis
+  const profile = useAI ? (aiResult.userProfile || ruleProfile) : ruleProfile
+  const opportunity = useAI
+    ? { focusQuestions: aiResult.focusQuestions || [], strongestEmotion: aiResult.strongestEmotion, directions: aiResult.directions || [] }
+    : ruleOpportunity
+  const topics = useAI && aiResult.topicSuggestions?.length > 0 ? aiResult.topicSuggestions : ruleTopics
+  const titles = useAI && aiResult.titleSuggestions?.length > 0 ? aiResult.titleSuggestions : ruleTitles
+
+  // 如果有历史恢复覆盖，使用覆盖数据
+  const effectiveAnalysis = historyOverride?.analysis || analysis
+  const effectiveProfile = historyOverride?.profile || profile
+  const effectiveOpportunity = historyOverride?.opportunity || opportunity
+  const effectiveTopics = historyOverride?.topics || topics
+  const effectiveTitles = historyOverride?.titles || titles
+  const effectiveStats = historyOverride?.stats || stats
+
   // 自动保存分析历史（当有数据且非恢复状态时）
   useEffect(() => {
     if (stats.uniqueCount === 0) return
-    if (historyOverride) return // 正在查看历史，不覆盖
-    const snapshot = {
-      stats,
-      analysis,
-      profile,
-      opportunity,
-      topics,
-      titles,
-    }
+    if (historyOverride) return
+    const snapshot = { stats, analysis, profile, opportunity, topics, titles }
     saveEntry({ mode: useAI ? 'ai' : 'rule', commentCount: stats.uniqueCount, snapshot })
     setHistory(loadHistory())
   }, [stats.uniqueCount, analysisMode, aiResult])
@@ -136,25 +148,6 @@ export default function App() {
         : ruleAnalysis
     return generateOutline(topic, useAI ? 'ai' : 'rule', apiKey, currentAnalysis)
   }, [useAI, apiKey, aiResult, ruleAnalysis, historyOverride])
-
-  // 选择当前使用的分析数据
-  const useAI = analysisMode === 'ai' && aiResult && !aiFailed
-
-  // 如果有历史恢复覆盖，使用覆盖数据
-  const effectiveAnalysis = historyOverride?.analysis || analysis
-  const effectiveProfile = historyOverride?.profile || profile
-  const effectiveOpportunity = historyOverride?.opportunity || opportunity
-  const effectiveTopics = historyOverride?.topics || topics
-  const effectiveTitles = historyOverride?.titles || titles
-  const effectiveStats = historyOverride?.stats || stats
-
-  const analysis = useAI ? { rankedAnxieties: aiResult.rankedAnxieties, topAnxiety: aiResult.topAnxiety } : ruleAnalysis
-  const profile = useAI ? (aiResult.userProfile || ruleProfile) : ruleProfile
-  const opportunity = useAI
-    ? { focusQuestions: aiResult.focusQuestions || [], strongestEmotion: aiResult.strongestEmotion, directions: aiResult.directions || [] }
-    : ruleOpportunity
-  const topics = useAI && aiResult.topicSuggestions?.length > 0 ? aiResult.topicSuggestions : ruleTopics
-  const titles = useAI && aiResult.titleSuggestions?.length > 0 ? aiResult.titleSuggestions : ruleTitles
 
   const handleCopyReport = useCallback(async () => {
     const report = formatReport({
