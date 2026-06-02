@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Copy, Check, Sparkles, Layers } from 'lucide-react'
+import { Copy, Check, Clock, Sparkles, Layers } from 'lucide-react'
 import { CommentInput } from './components/CommentInput.jsx'
 import { StatsPanel } from './components/StatsPanel.jsx'
 import { AnxietyCards } from './components/AnxietyCards.jsx'
@@ -17,6 +17,12 @@ import {
 import { parseComments } from './lib/parseComments.js'
 import { formatReport } from './lib/formatReport.js'
 import { deepseekAnalyze } from './lib/deepseekAnalysis.js'
+import { loadHistory, saveEntry, deleteEntry } from './lib/historyStore.js'
+import { HistoryPanel } from './components/HistoryPanel.jsx'
+import { ExportMenu } from './components/ExportMenu.jsx'
+import { downloadMarkdown } from './lib/formatMarkdown.js'
+import { generateOutline } from './lib/generateOutline.js'
+import { OutlineModal } from './components/OutlineModal.jsx'
 
 const LS_KEY_MODE = 'ai_workbench_mode'
 const LS_KEY_API_KEY = 'ai_workbench_api_key'
@@ -57,6 +63,9 @@ export default function App() {
   const [aiResult, setAiResult] = useState(null)
   const [aiLoading, setAiLoading] = useState(false)
   const [aiFailed, setAiFailed] = useState(false)
+  const [history, setHistory] = useState(loadHistory)
+  const [historyOverride, setHistoryOverride] = useState(null)
+  const [outlineTopic, setOutlineTopic] = useState(null)
 
   const stats = useMemo(() => parseComments(rawText), [rawText])
 
@@ -94,8 +103,50 @@ export default function App() {
     return () => { cancelled = true }
   }, [analysisMode, apiKey, stats.comments])
 
-  // 选择当前使用的分析数据：AI 成功则用 AI，否则回退到规则
+  // 自动保存分析历史（当有数据且非恢复状态时）
+  useEffect(() => {
+    if (stats.uniqueCount === 0) return
+    if (historyOverride) return // 正在查看历史，不覆盖
+    const snapshot = {
+      stats,
+      analysis,
+      profile,
+      opportunity,
+      topics,
+      titles,
+    }
+    saveEntry({ mode: useAI ? 'ai' : 'rule', commentCount: stats.uniqueCount, snapshot })
+    setHistory(loadHistory())
+  }, [stats.uniqueCount, analysisMode, aiResult])
+
+  function handleRestoreHistory(snapshot) {
+    setHistoryOverride(snapshot)
+  }
+
+  function handleDeleteHistory(id) {
+    deleteEntry(id)
+    setHistory(loadHistory())
+  }
+
+  const handleGenerateOutline = useCallback(async (topic) => {
+    const currentAnalysis = historyOverride
+      ? { rankedAnxieties: historyOverride.analysis?.rankedAnxieties || [], topAnxiety: historyOverride.analysis?.topAnxiety || null }
+      : useAI
+        ? { rankedAnxieties: aiResult.rankedAnxieties, topAnxiety: aiResult.topAnxiety }
+        : ruleAnalysis
+    return generateOutline(topic, useAI ? 'ai' : 'rule', apiKey, currentAnalysis)
+  }, [useAI, apiKey, aiResult, ruleAnalysis, historyOverride])
+
+  // 选择当前使用的分析数据
   const useAI = analysisMode === 'ai' && aiResult && !aiFailed
+
+  // 如果有历史恢复覆盖，使用覆盖数据
+  const effectiveAnalysis = historyOverride?.analysis || analysis
+  const effectiveProfile = historyOverride?.profile || profile
+  const effectiveOpportunity = historyOverride?.opportunity || opportunity
+  const effectiveTopics = historyOverride?.topics || topics
+  const effectiveTitles = historyOverride?.titles || titles
+  const effectiveStats = historyOverride?.stats || stats
 
   const analysis = useAI ? { rankedAnxieties: aiResult.rankedAnxieties, topAnxiety: aiResult.topAnxiety } : ruleAnalysis
   const profile = useAI ? (aiResult.userProfile || ruleProfile) : ruleProfile
@@ -106,7 +157,14 @@ export default function App() {
   const titles = useAI && aiResult.titleSuggestions?.length > 0 ? aiResult.titleSuggestions : ruleTitles
 
   const handleCopyReport = useCallback(async () => {
-    const report = formatReport({ stats, analysis, profile, opportunity, topics, titles })
+    const report = formatReport({
+      stats: effectiveStats,
+      analysis: effectiveAnalysis,
+      profile: effectiveProfile,
+      opportunity: effectiveOpportunity,
+      topics: effectiveTopics,
+      titles: effectiveTitles,
+    })
     try {
       await navigator.clipboard.writeText(report)
       setCopied(true)
@@ -123,7 +181,7 @@ export default function App() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     }
-  }, [stats, analysis, profile, opportunity, topics, titles])
+  }, [effectiveStats, effectiveAnalysis, effectiveProfile, effectiveOpportunity, effectiveTopics, effectiveTitles])
 
   function handleSetMode(mode) {
     setAnalysisMode(mode)
@@ -135,7 +193,7 @@ export default function App() {
     try { localStorage.setItem(LS_KEY_API_KEY, key) } catch { /* ignore */ }
   }
 
-  const hasData = stats.uniqueCount > 0
+  const hasData = effectiveStats.uniqueCount > 0
 
   return (
     <main className="min-h-screen bg-[#f6f7f4] px-4 py-5 text-slate-900 sm:px-6 lg:px-8">
@@ -143,9 +201,9 @@ export default function App() {
         <div className="lg:sticky lg:top-5 lg:h-[calc(100vh-2.5rem)]">
           <CommentInput
             value={rawText}
-            onChange={setRawText}
-            onExample={() => setRawText(exampleComments)}
-            onClear={() => { setRawText(''); setAiResult(null); setAiFailed(false) }}
+            onChange={(v) => { setRawText(v); setHistoryOverride(null) }}
+            onExample={() => { setRawText(exampleComments); setHistoryOverride(null) }}
+            onClear={() => { setRawText(''); setAiResult(null); setAiFailed(false); setHistoryOverride(null) }}
             stats={stats}
             analysisMode={analysisMode}
             onSetMode={handleSetMode}
@@ -155,6 +213,19 @@ export default function App() {
         </div>
 
         <div className="grid gap-5">
+          {historyOverride && (
+            <div className="flex items-center gap-2 rounded-md bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
+              <Clock size={16} />
+              正在查看历史记录
+              <button
+                type="button"
+                className="ml-auto text-sm font-medium text-amber-900 underline hover:no-underline"
+                onClick={() => setHistoryOverride(null)}
+              >
+                返回当前分析
+              </button>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-sm font-semibold text-cyan-800">分析结果</h2>
@@ -176,35 +247,43 @@ export default function App() {
               </span>
             </div>
             {hasData && (
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-md border border-stone-300 px-3 text-sm font-medium text-slate-600 transition hover:bg-stone-100"
-                onClick={handleCopyReport}
-              >
-                {copied ? (
-                  <>
-                    <Check size={16} aria-hidden="true" />
-                    已复制
-                  </>
-                ) : (
-                  <>
-                    <Copy size={16} aria-hidden="true" />
-                    复制报告
-                  </>
-                )}
-              </button>
+              <ExportMenu
+                copied={copied}
+                onCopy={handleCopyReport}
+                onExportMarkdown={() => downloadMarkdown({
+                  stats: effectiveStats,
+                  analysis: effectiveAnalysis,
+                  profile: effectiveProfile,
+                  opportunity: effectiveOpportunity,
+                  topics: effectiveTopics,
+                  titles: effectiveTitles,
+                })}
+              />
             )}
           </div>
-          <StatsPanel stats={stats} />
-          <AnxietyCards anxieties={analysis.rankedAnxieties} />
-          <UserProfile profile={profile} />
-          <OpportunityPanel opportunity={opportunity} />
+          <StatsPanel stats={effectiveStats} />
+          <AnxietyCards anxieties={effectiveAnalysis.rankedAnxieties} />
+          <UserProfile profile={effectiveProfile} />
+          <OpportunityPanel opportunity={effectiveOpportunity} />
           <div className="grid gap-5 xl:grid-cols-2">
-            <TopicSuggestions topics={topics} />
-            <TitleSuggestions titles={titles} />
+            <TopicSuggestions topics={effectiveTopics} onSelectTopic={setOutlineTopic} />
+            <TitleSuggestions titles={effectiveTitles} />
           </div>
+          <HistoryPanel
+            history={history}
+            onRestore={handleRestoreHistory}
+            onDelete={handleDeleteHistory}
+          />
         </div>
       </div>
+
+      {outlineTopic && (
+        <OutlineModal
+          topic={outlineTopic}
+          onClose={() => setOutlineTopic(null)}
+          onGenerate={handleGenerateOutline}
+        />
+      )}
     </main>
   )
 }
