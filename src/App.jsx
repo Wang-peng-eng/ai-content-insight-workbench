@@ -26,7 +26,7 @@ import { OutlineModal } from './components/OutlineModal.jsx'
 
 const LS_KEY_MODE = 'ai_workbench_mode'
 const LS_KEY_API_KEY = 'ai_workbench_api_key'
-const BUILTIN_API_KEY = 'sk-1cdb6c0ae0e447ef972f9d9a7825ae3e'
+const BUILTIN_API_KEY = 'sk-202d273759db40608d5e645602024485'
 
 const exampleComments = [
   '用了三款粉底液都卡粉，到底选哪个好啊？',
