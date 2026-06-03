@@ -1,43 +1,26 @@
 const BRIDGE_KEY = 'ai_content_bridge';
+const MAX_AGE = 30 * 60 * 1000; // 30 minutes
 
 export function pushToGenerator(data) {
-  const payload = {
-    ...data,
-    timestamp: Date.now(),
-  };
   try {
-    localStorage.setItem(BRIDGE_KEY, JSON.stringify(payload));
+    const raw = localStorage.getItem(BRIDGE_KEY);
+    const queue = raw ? JSON.parse(raw) : [];
+    // Clean expired entries, then push new one
+    const valid = queue.filter(item => Date.now() - item.timestamp < MAX_AGE);
+    valid.push({ ...data, timestamp: Date.now() });
+    localStorage.setItem(BRIDGE_KEY, JSON.stringify(valid));
   } catch { /* ignore */ }
 }
 
 export function popFromBridge() {
   try {
     const raw = localStorage.getItem(BRIDGE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    // Auto-expire after 30 minutes
-    if (Date.now() - data.timestamp > 30 * 60 * 1000) {
-      localStorage.removeItem(BRIDGE_KEY);
-      return null;
-    }
+    if (!raw) return [];
+    const queue = JSON.parse(raw);
+    const valid = queue.filter(item => Date.now() - item.timestamp < MAX_AGE);
     localStorage.removeItem(BRIDGE_KEY);
-    return data;
+    return valid;
   } catch {
-    return null;
-  }
-}
-
-export function peekFromBridge() {
-  try {
-    const raw = localStorage.getItem(BRIDGE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (Date.now() - data.timestamp > 30 * 60 * 1000) {
-      localStorage.removeItem(BRIDGE_KEY);
-      return null;
-    }
-    return data;
-  } catch {
-    return null;
+    return [];
   }
 }
