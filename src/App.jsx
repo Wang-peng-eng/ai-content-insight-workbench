@@ -26,18 +26,21 @@ import { OutlineModal } from './components/OutlineModal.jsx'
 
 const LS_KEY_MODE = 'ai_workbench_mode'
 const LS_KEY_API_KEY = 'ai_workbench_api_key'
+const BUILTIN_API_KEY = 'sk-1cdb6c0ae0e447ef972f9d9a7825ae3e'
 
 const exampleComments = [
-  '我35岁了，现在学AI还来得及吗？',
-  '真的很怕被AI替代，工作越来越不稳定。',
-  '想转行AI但不知道从哪里开始，感觉课程太多了。',
-  '工资不涨，房贷压力很大，想靠AI做点副业。',
-  '零基础小白学AI会不会太晚？',
-  '公司最近裁员，我开始担心自己的岗位没了。',
-  '我35岁了，现在学AI还来得及吗？',
-  '每天都说AI时代来了，但普通人到底该怎么办？',
-  '不会写代码能不能转型AI运营？',
-  '看别人用AI赚钱，我越看越焦虑。',
+  '用了三款粉底液都卡粉，到底选哪个好啊？',
+  '跟风买了这个面霜结果闷痘，感觉被博主骗了',
+  '25岁开始抗老会不会太早？好纠结',
+  '同样的东西淘宝比直播间贵了50块，感觉被割韭菜',
+  '零基础学化妆到底先买什么，看攻略越看越乱',
+  '用了三个月美白精华一点效果没有，是我手法不对吗',
+  '有没有真正好用的平价替代，大牌真的太贵了',
+  '服务态度也太差了，问几句就不耐烦',
+  '别人25岁存款6位数，我还在纠结要不要买这支口红',
+  '敏感肌真的太难了，什么都不敢用怕烂脸',
+  '为什么朋友圈里的代购比官网便宜那么多？',
+  '用了三款粉底液都卡粉，到底选哪个好啊？',
 ].join('\n')
 
 function loadMode() {
@@ -45,14 +48,14 @@ function loadMode() {
     const v = localStorage.getItem(LS_KEY_MODE)
     if (v === 'ai' || v === 'rule') return v
   } catch { /* ignore */ }
-  return 'rule'
+  return 'ai'
 }
 
 function loadApiKey() {
   try {
-    return localStorage.getItem(LS_KEY_API_KEY) || ''
+    return localStorage.getItem(LS_KEY_API_KEY) || BUILTIN_API_KEY
   } catch { /* ignore */ }
-  return ''
+  return BUILTIN_API_KEY
 }
 
 export default function App() {
@@ -259,7 +262,15 @@ export default function App() {
           <UserProfile profile={effectiveProfile} />
           <OpportunityPanel opportunity={effectiveOpportunity} />
           <div className="grid gap-5 xl:grid-cols-2">
-            <TopicSuggestions topics={effectiveTopics} onSelectTopic={setOutlineTopic} />
+            <TopicSuggestions
+              topics={effectiveTopics}
+              onSelectTopic={setOutlineTopic}
+              bridgeData={{
+                persona: effectiveProfile?.occupation || effectiveProfile?.traits?.[0] || '',
+                audience: effectiveProfile?.age || '',
+                platform: '小红书',
+              }}
+            />
             <TitleSuggestions titles={effectiveTitles} />
           </div>
           <HistoryPanel

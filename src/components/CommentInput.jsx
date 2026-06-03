@@ -1,9 +1,29 @@
 import { useRef, useState } from 'react'
-import { ClipboardPaste, Eye, EyeOff, Key, Layers, RotateCcw, Sparkles, Upload, Wand2 } from 'lucide-react'
+import { Camera, ClipboardPaste, Image, Layers, Loader2, RotateCcw, Sparkles, Upload, Wand2 } from 'lucide-react'
+import { ocrImages } from '../lib/ocrImages'
 
 export function CommentInput({ value, onChange, onExample, onClear, stats, analysisMode, onSetMode, apiKey, onSetApiKey }) {
   const fileInputRef = useRef(null)
+  const imageInputRef = useRef(null)
   const [csvError, setCsvError] = useState('')
+  const [ocrProgress, setOcrProgress] = useState(null)
+
+  async function handleImageUpload(event) {
+    const files = Array.from(event.target.files)
+    if (!files.length) return
+    setCsvError('')
+    setOcrProgress({ current: 0, total: files.length, file: '', status: 'starting' })
+
+    const results = await ocrImages(files, (p) => setOcrProgress({ ...p }))
+
+    const lines = results.map((r) => r.text.split(/\r?\n/).filter(Boolean)).flat()
+    const existing = value.trim()
+    onChange(existing ? existing + '\n' + lines.join('\n') : lines.join('\n'))
+
+    setOcrProgress({ current: files.length, total: files.length, status: 'complete', count: lines.length })
+
+    event.target.value = ''
+  }
   const [showKey, setShowKey] = useState(false)
 
   function handleCsvUpload(event) {
@@ -54,7 +74,7 @@ export function CommentInput({ value, onChange, onExample, onClear, stats, analy
         <p className="text-sm font-semibold text-cyan-800">评论导入</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-normal text-slate-950">AI内容洞察工作台</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          粘贴评论或上传 CSV，自动去空行、去重，并生成运营洞察。
+          粘贴评论、上传 CSV、或导入截图自动 OCR 提取文字，自动去空行、去重、过滤无意义内容，并生成运营洞察。
         </p>
 
         {/* 分析模式切换 */}
@@ -87,46 +107,20 @@ export function CommentInput({ value, onChange, onExample, onClear, stats, analy
             </button>
           </div>
 
-          {/* API Key 输入（仅 AI 模式） */}
+          {/* API Key 已内置 */}
           {analysisMode === 'ai' && (
-            <div className="mt-2.5">
-              <label className="text-xs font-medium text-slate-500" htmlFor="api-key-input">
-                DeepSeek API Key
-              </label>
-              <div className="mt-1 flex gap-1.5">
-                <div className="relative flex-1">
-                  <Key size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    id="api-key-input"
-                    type={showKey ? 'text' : 'password'}
-                    className="w-full rounded-md border border-stone-300 bg-white py-1.5 pl-8 pr-2 text-xs text-slate-900 placeholder:text-slate-400 focus:border-purple-400 focus:outline-none"
-                    placeholder="sk-..."
-                    value={apiKey}
-                    onChange={(e) => onSetApiKey(e.target.value)}
-                    autoComplete="off"
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="inline-flex items-center rounded-md border border-stone-300 px-2 text-slate-400 hover:text-slate-600"
-                  onClick={() => setShowKey(!showKey)}
-                  title={showKey ? '隐藏' : '显示'}
-                >
-                  {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-              <p className="mt-1 text-xs text-slate-400">
-                Key 仅保存在浏览器本地，不会上传到任何服务器。
-              </p>
-            </div>
+            <p className="mt-2 text-xs text-slate-400">
+              API Key 已内置，直接粘贴评论即可使用 AI 分析。
+            </p>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-3 border-b border-stone-200 px-5 py-4">
+      <div className="grid grid-cols-4 gap-3 border-b border-stone-200 px-5 py-4">
         <Metric label="原始评论" value={stats.originalCount} />
         <Metric label="去重后" value={stats.uniqueCount} />
         <Metric label="重复" value={stats.duplicateCount} />
+        <Metric label="已过滤" value={stats.filteredCount ?? 0} hint="无意义内容" />
       </div>
 
       <div className="flex flex-1 flex-col px-5 py-4">
@@ -143,6 +137,29 @@ export function CommentInput({ value, onChange, onExample, onClear, stats, analy
 
         {csvError && (
           <p className="mt-2 text-sm text-red-600">{csvError}</p>
+        )}
+
+        {ocrProgress && ocrProgress.status !== 'complete' && (
+          <div className="mt-3 rounded-md bg-purple-50 border border-purple-200 px-3 py-2.5">
+            <div className="flex items-center gap-2 text-sm text-purple-800">
+              {ocrProgress.status === 'starting'
+                ? <><Loader2 size={14} className="animate-spin" /> 正在加载 OCR 引擎…</>
+                : <><Loader2 size={14} className="animate-spin" /> 识别中 {ocrProgress.current}/{ocrProgress.total}：{ocrProgress.file}</>
+              }
+            </div>
+            <div className="mt-2 h-1.5 w-full rounded-full bg-purple-200">
+              <div
+                className="h-1.5 rounded-full bg-purple-600 transition-all duration-300"
+                style={{ width: `${Math.round((ocrProgress.current / ocrProgress.total) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {ocrProgress?.status === 'complete' && (
+          <p className="mt-2 text-sm text-emerald-600">
+            已从 {ocrProgress.total} 张截图中提取 {ocrProgress.count} 行评论，已追加到输入区。
+          </p>
         )}
 
         <div className="mt-4 flex flex-wrap gap-3">
@@ -168,6 +185,26 @@ export function CommentInput({ value, onChange, onExample, onClear, stats, analy
             accept=".csv"
             className="hidden"
             onChange={handleCsvUpload}
+          />
+          <button
+            type="button"
+            className="inline-flex h-10 items-center gap-2 rounded-md border border-stone-300 px-4 text-sm font-medium text-slate-700 transition hover:bg-stone-100 disabled:opacity-50"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={ocrProgress?.status === 'processing' || ocrProgress?.status === 'starting'}
+          >
+            {ocrProgress?.status === 'processing' || ocrProgress?.status === 'starting'
+              ? <Loader2 size={17} className="animate-spin" />
+              : <Camera size={17} aria-hidden="true" />
+            }
+            导入截图
+          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleImageUpload}
           />
           <button
             type="button"
@@ -207,11 +244,12 @@ function parseCSVLine(line) {
   return result
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value, hint }) {
   return (
     <div className="rounded-md bg-stone-100 px-3 py-3">
       <p className="text-xs text-slate-500">{label}</p>
       <p className="mt-1 text-xl font-semibold text-slate-950">{value}</p>
+      {hint && <p className="text-xs text-slate-400">{hint}</p>}
     </div>
   )
 }
